@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+	<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+  <link rel="stylesheet" href="https://www.w3schools.com/w3css/4/w3.css">
+	<style type="text/css">
+    body{
+      background-color: #e5efff;
+    }
+    #map_canvas{
+      height: 500px;
+    }
+    #detail_div{
+      display: inline-block;
+      width: 400px;
+      height: 500px;
+    }
+    #writewala{
+      font-size: 22px;
+      width: 400px;
+    }
+	</style>
+</head>
+
+<body>
+    <!-- Page Content -->
+    <div class="container-fluid">
+      <h1 style="text-align: center;">ROUTE DETAILS</h1>
+      <button type="button" class="btn" style="float: right;">
+        <a href="C:/wamp/www/intern_proj/webview.html" style="text-decoration: none;">Route Selection</a>
+      </button><br>
+        <div class="col-lg-12">
+              <!-- Trigger the modal with a button -->
+        
+        <!-- Modal -->
+        <div id="myModal" class="modal fade" role="dialog">
+          <div class="modal-dialog">
+        
+            <!-- Modal content-->
+            <div class="modal-content">
+              <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+                <h4 class="modal-title">Routes Information</h4>
+              </div>
+              <div class="modal-body">
+                <table class="table table-hover" id="table">
+                  <thead>
+                    <tr>
+                      <th>Route Id</th>
+                      <th>Yes</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbody">
+                  </tbody>
+                </table>
+              </div>
+              <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+              </div>
+            </div>
+        
+          </div>
+        </div>
+
+                <div class="col-lg-8 w3-panel w3-border w3-round-large w3-border-blue" id="map_canvas"></div>
+                <div class="col-lg-2" style="display: inline-block;width: 100px;">
+                <div id="detail_div" class="col-lg-4 w3-panel">
+                  <button type="button" class="btn btn-info btn-lg" id="modaOpenBtn" style="margin: 0 auto;">Select Route</button>
+                  <div id="writewala" class="col-lg-4 w3-panel w3-topbar w3-bottombar w3-leftbar w3-rightbar w3-border-blue w3-round-large">
+                    <div id="routeId"></div>
+                    <div id="useractivity"></div>
+                    <div id="info">
+                      <u>Note:</u><br>
+                      <font color="#0000FF"><b>________</b></font> Selected Route<br>
+                      <font color="#00FF00"><b>________</b></font> User's Path
+                    </div>
+                  </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- /.container -->
+
+    <script type="text/javascript" src="https://maps.googleapis.com/maps/api/js?key=YOUR_KEY&libraries=places,geometry"></script>
+    <script>
+    	var map;
+    	var start_marker;
+    	var dest_marker;
+        var directionsService;
+        var polylines = [];
+        var shadows = [];
+        var info = [];
+        var infowindow;
+        var myVar;
+        var from_strayed=0;
+        var to_strayed =0;
+        var strayed = [];
+        var alerting=0;
+    	function initMap() {
+              var myLatlng = new google.maps.LatLng(33.694132, 73.065157);
+              var myOptions = {
+                  zoom: 17,
+                  center: myLatlng,
+                  mapTypeId: google.maps.MapTypeId.ROADMAP
+              };
+              map = new google.maps.Map(document.getElementById("map_canvas"), myOptions);
+
+                  directionsService = new google.maps.DirectionsService();
+                   // get the bounds of the polyline
+                   // http://stackoverflow.com/questions/3284808/getting-the-bounds-of-a-polyine-in-google-maps-api-v3
+                   google.maps.Polyline.prototype.getBounds = function(startBounds) {
+                       if(startBounds) {
+                           var bounds = startBounds;
+                       }
+                       else {
+                           var bounds = new google.maps.LatLngBounds();
+                       }
+                       this.getPath().forEach(function(item, index) {
+                           bounds.extend(new google.maps.LatLng(item.lat(), item.lng()));
+                       });
+                       return bounds;
+                   };
+	     }
+
+          $('#modaOpenBtn').click(()=>{
+            myStopFunction();
+            $.ajax({
+                          type:'POST',
+                          url:'http://b.com/sanaIntern/show_modal.php',
+                          dataType: "json",
+                          data:{},
+                          success:function(data){
+                            document.getElementById("tbody").innerHTML = '';
+                            $.each(data.result, function(i, feature) {
+                              document.getElementById("tbody").innerHTML += "<tr><td>"+feature.routeId+"</td><td><button type=\"button\" id=\""+feature.routeId+"\" class=\"btn btn-success\" onclick=\"showDetail(this.id)\">Show Route</button></td></tr>";
+                            });
+
+                          }
+                      });
+            $('#myModal').modal('toggle');
+          });
+
+        function showDetail(routeId){
+          $('#myModal').modal('hide');
+          from_strayed=0;
+          to_strayed =0;
+          strayed = [];
+          myVar = setInterval(function() {drawUserPath(routeId);},5000);
+          drawAdminPath(routeId);
+          document.getElementById("routeId").innerHTML = "<u>Route Id:</u> "+routeId;
+        }
+
+        function myStopFunction() {
+                clearInterval(myVar);
+
+                      // it may be needed to close the previous infoWindow
+                      if(infowindow) {
+                           infowindow.close();
+                           infowindow = null;
+                      }
+
+
+                      // clear former polylines
+                      for(var j in  polylines ) {
+                          polylines[j].setMap(null);
+                          shadows[j].setMap(null);
+                      }
+                      polylines = [];
+                      shadows = [];
+                      info = [];
+                      document.getElementById("useractivity").innerHTML ="";
+                      document.getElementById("routeId").innerHTML ="";
+
+        }
+
+        // returns a polyline.
+        // if hide is set to true, the line is not put on the map
+        function drawPolyline(path, color, hide, strokeWeight) {
+            var line = new google.maps.Polyline({
+                path: path,
+                strokeColor: color,
+                strokeOpacity: 0.9,
+                strokeWeight: strokeWeight
+            });
+            if(! hide) {
+                line.setMap(map);
+            }
+            return line;
+        }
+        function drawPolylineShadow(path, color, hide) {
+            var line = new google.maps.Polyline({
+                path: path,
+                strokeColor: color,
+                strokeOpacity: 0.4,
+                strokeWeight: 7
+            });
+            if(! hide) {
+                line.setMap(map);
+            }
+            return line;
+        }
+
+        function drawUserPath(routeId){
+          strayed=[];
+          var routeId = routeId;
+          $.ajax({
+              type:'POST',
+              url:'http://b.com/sanaIntern/retrieve_path.php',
+              dataType: "json",
+              data:{"routeId":routeId},
+              success:function(data){
+                  if(data.status == 'ok'){
+                    document.getElementById("useractivity").innerHTML = "";
+                      // Get the path
+                      var userTrip=new Array();
+                      $.each(data.result, function(i, feature) {
+                            to_strayed = i;
+                            strayed.push(feature.strayed);
+                            userTrip.push(new google.maps.LatLng(parseFloat(feature.latitude),parseFloat(feature.longitude)));
+                      });
+                      for(from_strayed;from_strayed<=to_strayed;from_strayed++){
+                        if(strayed[from_strayed]==1){
+                          alerting+=1;
+                        }
+                      }
+                      if(alerting>0){
+                        alert("User strayed from path");
+                      }
+                      alerting=0;
+                      from_strayed=to_strayed+1;
+              
+                      var flightPath = new google.maps.Polyline({
+                            path: userTrip,
+                            geodesic: true,
+                            strokeColor: '#00FF00',
+                            strokeOpacity: 1.0,
+                            strokeWeight: 2
+                      });
+                      var shadow = drawPolylineShadow(userTrip, '#666666');
+                        var line = drawPolyline(userTrip, '#00FF00', false, 3);
+                      polylines.push(line);
+                        shadows.push(shadow);
+                  for(var j in  polylines ) {
+                      polylines[j].setMap(map);
+                      shadows[j].setMap(map);
+                  }
+                  var bounds = new google.maps.LatLngBounds();
+                  bounds = line.getBounds(bounds);
+                  map.fitBounds(bounds);
+
+                  }else if (data.status == 'err'){
+                    document.getElementById("useractivity").innerHTML = "User has not followed this route yet.";
+                  } 
+              }
+          });
+        }
+
+        function drawAdminPath(routeId){
+          var routeId = routeId;
+          $.ajax({
+              type:'POST',
+              url:'http://b.com/sanaIntern/get_admin_path.php',
+              dataType: "json",
+              data:{"routeId":routeId},
+              success:function(data){
+
+                      // Get the path
+                      var userTrip=new Array();
+                      $.each(data.result, function(i, feature) {
+                            userTrip.push(new google.maps.LatLng(parseFloat(feature.latitude),parseFloat(feature.longitude)));
+                      });
+                
+                      var flightPath = new google.maps.Polyline({
+                            path: userTrip,
+                            geodesic: true,
+                            strokeColor: '#0000FF',
+                            strokeOpacity: 1.0,
+                            strokeWeight: 1
+                      });
+                      var shadow = drawPolylineShadow(userTrip, '#666666');
+                        var line = drawPolyline(userTrip, '#0000FF', false, 1.5);
+                      polylines.push(line);
+                        shadows.push(shadow);
+                  for(var j in  polylines ) {
+                      polylines[j].setMap(map);
+                      shadows[j].setMap(map);
+                  }
+                  var bounds = new google.maps.LatLngBounds();
+                  bounds = line.getBounds(bounds);
+                  map.fitBounds(bounds);
+
+                   
+              }
+          });
+        }
+
+          google.maps.event.addDomListener(window, "load", initMap);
+
+    </script>
+</body>
+
+</html>
